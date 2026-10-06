@@ -1,0 +1,51 @@
+# Vibe-Trading CN 项目规则
+
+> **范围**：本目录所有代码（Vibe-Trading 二次开发）
+> **继承**：`.cursor/rules/` 全部规则（无需重复声明）
+> **覆盖**：本文件优先于上级规则
+
+## 1. BTC/ETH 限定
+
+本项目**只**关注 BTC 和 ETH：
+
+| 项 | 范围 |
+|---|---|
+| 标的 | `BTC-USDT`, `ETH-USDT`（永续合约） |
+| 交易所 | Binance USD-M、OKX（其他禁用） |
+| 数据源 | Binance、CoinGecko（其他禁用） |
+| 因子 | 只验证 BTC/ETH 上有效的因子 |
+
+## 2. 不接受添加非主标的代码
+
+任何引入其他标的、其他市场的代码 → 拒绝。
+
+## 3. 二次开发边界
+
+| 模块 | 行为 |
+|---|---|
+| 上游 `vibe-trading-ai` | 通过 pip 安装，**不修改** |
+| 我们的代码 | 只能继承/扩展，**不改 upstream** |
+| Agent 决策 | **不**直接调上游 execution，走 MCP 中间层 |
+
+## 4. Agent 决策必须可解释（Why 而非 What）
+
+每个 Agent 决策必须包含：
+
+```python
+@dataclass
+class AgentDecision:
+    action: Literal['BUY', 'SELL', 'HOLD']
+    confidence: float  # 0.0 - 1.0
+    reasoning: str     # 为什么（业务逻辑）
+    signals: list[str] # 触发的信号列表
+```
+
+## 5. MCP 工具必须带 trace
+
+所有 MCP 工具返回必须包含：
+
+```python
+{"trace_id": str, "ts": int, "result": Any}
+```
+
+便于 tracelet 串联分析。

@@ -1,0 +1,28 @@
+# Dependencies
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Env
+.env
+.env.local
+
+# Test
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Logs
+*.log
+
+# Vibe-Trading runtime
+.vibe-trading/
