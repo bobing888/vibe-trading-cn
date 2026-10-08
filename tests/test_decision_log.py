@@ -238,3 +238,113 @@ class TestDecisionEntry:
             status="settled",
         )
         assert entry.status == "settled"
+
+
+# ====================================================================
+# v3.5 PR-6b 决策记忆 settle + reflect 测试
+# 设计要点：
+# - settle_pending 走 PointInTimeFetcher（基座 fetch_market_data 包装）
+# - 基准：v3 preset yaml benchmark_map（默认 SPY；币用 BTCUSDT 做 alpha）
+# - holding_days 默认 5（TA 一致）
+# - 完整窗口未成交 → 保留 pending（不假结算）
+# - reflect 用基座 LLMClient（不引入 TA 依赖）
+# ====================================================================
+
+
+class TestSettlePending:
+    """settle_pending: 拉实价 → 算 raw/alpha → 标记 settled + 写 reflection"""
+
+    def test_no_pending_entries_returns_zero(self, tmp_log_path: Path) -> None:
+        log = DecisionLog()
+        assert log.settle_pending() == 0
+
+    def test_pending_too_recent_stays_pending(self, tmp_log_path: Path) -> None:
+        """未来日期：完整窗口未成交 → 保留 pending"""
+        log = DecisionLog()
+        log.append("BTCUSDT", "2099-01-01", "BUY", "STRONG")
+        assert log.settle_pending() == 0
+        entries = log.load_entries()
+        assert entries[0]["status"] == "pending"
+        assert entries[0].get("raw_return") is None
+
+    def test_settled_entry_gets_raw_alpha_returns(
+        self, tmp_log_path: Path, monkeypatch
+    ) -> None:
+        """老日期 + mock 拉价 → 应被结算，含 raw/alpha/resolved"""
+        from src.vibe_trading_cn.decision_log import settle_helper
+
+        # mock PointInTimeFetcher：返回固定序列价
+        def fake_closes(ticker: str, start: str, end: str):
+            # entry 100 → 5d 后 110（+10% raw）
+            return {start: 100.0, end: 110.0}
+
+        monkeypatch.setattr(settle_helper, "fetch_closes", fake_closes)
+        log = DecisionLog()
+        log.append("BTCUSDT", "2020-01-01", "BUY", "STRONG")
+        settled = log.settle_pending(holding_days=5, benchmark="BTCUSDT")
+        assert settled == 1
+        entries = log.load_entries()
+        e = entries[0]
+        assert e["status"] == "settled"
+        assert e["raw_return"] == pytest.approx(0.10, abs=0.001)
+        assert e["alpha_return"] == pytest.approx(0.0, abs=0.001)  # benchmark=自己
+        assert e["holding_days"] == 5
+        assert e["resolved"] is not None  # resolution_date
+
+    def test_settled_entry_writes_reflection(
+        self, tmp_log_path: Path, monkeypatch
+    ) -> None:
+        """settle 后调用 reflect（mock LLM）→ 写入 reflection 字段"""
+        from src.vibe_trading_cn.decision_log import settle_helper
+
+        monkeypatch.setattr(settle_helper, "fetch_closes", lambda *a, **k: {
+            "2020-01-01": 100.0, "2020-01-08": 110.0
+        })
+        # mock LLM（duck typing：call(messages) → obj with .content）
+        monkeypatch.setattr(
+            settle_helper, "call_llm",
+            lambda *a, **k: type("R", (), {"content": "alpha +10%，STRONG 持仓 5d 后兑现，看多信号胜出"})()
+        )
+
+        log = DecisionLog()
+        log.append("BTCUSDT", "2020-01-01", "BUY", "STRONG")
+        log.settle_pending(holding_days=5, benchmark="BTCUSDT", reflect=True)
+        entries = log.load_entries()
+        assert "alpha +10%" in entries[0]["reflection"]
+
+    def test_settle_idempotent(self, tmp_log_path: Path, monkeypatch) -> None:
+        """已 settled 的不应再处理"""
+        from src.vibe_trading_cn.decision_log import settle_helper
+        monkeypatch.setattr(settle_helper, "fetch_closes", lambda *a, **k: {
+            "2020-01-01": 100.0, "2020-01-08": 110.0
+        })
+        log = DecisionLog()
+        log.append("BTCUSDT", "2020-01-01", "BUY", "STRONG")
+        log.settle_pending()
+        # 再调一次应跳过
+        assert log.settle_pending() == 0
+
+
+class TestReflect:
+    """reflect(): 单条 settled 决策 → LLM 反思字符串"""
+
+    def test_reflect_returns_string(self) -> None:
+        from src.vibe_trading_cn.decision_log import reflect_decision
+        text = reflect_decision(
+            decision="STRONG_BUY at 65000",
+            raw_return=0.10,
+            alpha_return=0.05,
+            benchmark="SPY",
+            holding_days=5,
+            llm_client=lambda msgs: type("R", (), {"content": "看多胜出"})(),
+        )
+        assert isinstance(text, str)
+        assert "看多胜出" in text
+
+    def test_reflect_without_llm_raises(self) -> None:
+        from src.vibe_trading_cn.decision_log import reflect_decision
+        with pytest.raises(ValueError, match="llm_client"):
+            reflect_decision(
+                decision="BUY", raw_return=0.0, alpha_return=0.0,
+                benchmark="SPY", holding_days=5, llm_client=None,
+            )
