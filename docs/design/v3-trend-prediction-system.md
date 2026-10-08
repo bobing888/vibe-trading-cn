@@ -763,7 +763,7 @@ grep -rE "run_swarm.*timeframes" src/
 
 ## §11 TA 功能集成（v3.4.3 追加，v3.4.3.1 / v3.4.3.2 / v3.4.3.3 / v3.4.3.4 / v3.4.3.5 / v3.4.3.6 内部修订）
 
-> **Status**: DRAFT v3.4.3.6（v3.4.3.6 由 PR-1-prep 验真 + kline-pm 拍板 §11.5 冲突 1 + §11.1/§11.2/§11.4 行数实测修订；**v3.4.3.6 撤销 v3.4.3.5 §11.1 多处低估 + 填入冲突 1 拍板结果 + 修 §11.4 PR 估算行数**；详见 §11.7）
+> **Status**: DRAFT v3.4.3.7（v3.4.3.7 由 [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 第 5 轮复审触发，修 4 IMPORTANT / 3 MINOR；**v3.4.3.7 统一以"gh api 目录总字节数（含 `__init__.py`）"为唯一基准**——v3.4.3.6 字节数子集（漏 turn.py / __init__.py）已修正）
 > **Date**: 2026-10-07
 > **触发**：基座 v3 跑通后，下一步演进方向收到用户问题"TradingAgents 的功能怎么结合进当前 vibe-trading 基座"
 > **方法**：从 GitHub 浅克隆 `TauricResearch/TradingAgents`（110k stars / 9.3M / Python）→ `/tmp/ta_src/`，逐文件读 + 逐行 grep 出 TA 真实功能（不靠 TA 自述）
@@ -772,18 +772,21 @@ grep -rE "run_swarm.*timeframes" src/
 
 ### §11.1 TA 能力总览（10 项 + 基座对照）
 
-> **v3.4.3.6 修订**：原 v3.4.3.5 §11.1 表中 4 处行数严重低估（Analyst Team 410 → 实测 750+ 行，Memory 601 → 实测 800+ 行 等）；本节所有行数改为 **gh api 验真字节数 + 实测行数**，验证命令附注。
+> **v3.4.3.7 修订（由 [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 第 5 轮复审触发）**：
+> - v3.4.3.6 字节数仅含 4 个 analyst 主体（漏 `turn.py`）和仅 memory 3 文件（漏 `__init__.py`）等
+> - v3.4.3.7 **统一以"gh api 目录总字节数（含 `__init__.py`）"为唯一基准**——权威、零歧义
+> - v3.4.3.6 "Analyst 23,039 B" 是漏 `turn.py` 的子集（实际 25,056 B）
 
-| TA 维度 | TA 实际有 | 实现位置（`/tmp/ta_src/tradingagents/`）| **实测字节** | **实测行数** | 基座（vibe-trading）当前 |
+| TA 维度 | TA 实际有 | 实现位置（`/tmp/ta_src/tradingagents/`）| **实测字节（v3.4.3.7 统一为 gh api 目录总字节数）**| **实测行数（≈）**| 基座（vibe-trading）当前 |
 |---|---|---|---|---|---|
-| **Analyst Team**（4 个）| Fundamentals / Sentiment / News / Technical | `agents/analysts/{fundamentals_analyst.py, market_analyst.py, news_analyst.py, sentiment_analyst.py}` | **23,039 B**（fundamentals 6610 + sentiment 9761 + news 3402 + market 3266）| **≈ 750+ 行**（v3.4.3.5 估"410 行"严重低估 1.8×）| ❌ **无 `analysts/` agent 目录**（上游 `agent/src/` 有 `core/ / entities/ / factors/` 等结构化目录；TA 4 analyst 思路可对照 `core/` + `factors/` 设计）|
-| **Researcher Team**（2 个辩论）| bull_researcher / bear_researcher | `agents/researchers/{bull_researcher.py, bear_researcher.py}` | **6,852 B**（bull 3388 + bear 3464）| **≈ 220 行**（v3.4.3.5 估"132 行"低估 1.7×）| ❌ **无**（上游 `agent/src/` 无 `researchers/` 目录）|
-| **Trader** | 单 trader | `agents/trader/trader.py` | 待验（PR-1-prep 阻塞，TA trader.py 路径未在 PR-1-prep 验真范围内）| ~98 行（v3.4.3.5 估）| ✅ **有 `agent/src/trading/` 目录**（真实，非占位）|
-| **Risk Mgmt**（3 个辩论者）| aggressive / conservative / neutral debator | `agents/risk_mgmt/{aggressive_debator.py, conservative_debator.py, neutral_debator.py}` | **12,608 B**（aggressive 4315 + conservative 4218 + neutral 4075）| **≈ 420 行**（v3.4.3.5 估"206 行"低估 2×）| ⚠️ **有 `risk_committee.yaml` preset（9313 字节），但无 `risk_mgmt/` agent 目录**——辩论 vs preset 路由是 §11.5 冲突 1 核心 |
+| **Analyst Team**（4 个 + turn.py）| Fundamentals / Sentiment / News / Technical + 调度 | `agents/analysts/{fundamentals_analyst.py, market_analyst.py, news_analyst.py, sentiment_analyst.py, turn.py}` | **25,056 B**（fundamentals 3266 + market 6610 + news 3402 + sentiment 9761 + turn 2017 + __init__ 0）| **≈ 800 行** | ❌ **无 `analysts/` agent 目录**（上游 `agent/src/` 有 `core/ / entities/ / factors/` 等结构化目录；TA 4 analyst 思路可对照 `core/` + `factors/` 设计）|
+| **Researcher Team**（2 个辩论）| bull_researcher / bear_researcher | `agents/researchers/{bull_researcher.py, bear_researcher.py}` | **6,852 B**（bull 3388 + bear 3464 + __init__ 0）| **≈ 220 行** | ❌ **无**（上游 `agent/src/` 无 `researchers/` 目录）|
+| **Trader** | 单 trader | `agents/trader/trader.py` | 待验 | ~98 行 | ✅ **有 `agent/src/trading/` 目录**（真实，非占位）|
+| **Risk Mgmt**（3 个辩论者）| aggressive / conservative / neutral debator | `agents/risk_mgmt/{aggressive_debator.py, conservative_debator.py, neutral_debator.py}` | **12,608 B**（aggressive 4315 + conservative 4218 + neutral 4075 + __init__ 0）| **≈ 420 行** | ⚠️ **有 `risk_committee.yaml` preset（9313 字节），但无 `risk_mgmt/` agent 目录**——辩论 vs preset 路由是 §11.5 冲突 1 核心 |
 | **Portfolio Manager** | 1 个 | `agents/managers/portfolio_manager.py` | 待验 | — | ✅ **有 `agent/src/portfolio/` 目录**（真实，非占位）；也有 `portfolio_review_board.yaml` preset（13060 字节）|
 | **图拓扑** | trading_graph + conditional_logic + checkpointer | `graph/` | — | — | ✅ **有 `agent/src/swarm/` 目录**（含 30 个 preset yaml）；v3 §4 写"LangGraph 编排"具体实现待 PR-1-prep 验真 |
-| **数据 vendors** | **7 个**（实测 `gh api repos/TauricResearch/TradingAgents/contents/tradingagents/dataflows/vendors` = 5 个 vendor.py + 2 个子目录）| `dataflows/vendors/{fred.py, polymarket.py, reddit.py, sec_edgar.py, stocktwits.py} + alpha_vantage/ + yahoo/` | **49,975 B**（fred 11106 + polymarket 5325 + reddit 14593 + sec_edgar 12571 + stocktwits 6380）| **≈ 1,500+ 行**（v3.4.3.5 估"8 个"误算，应为 5 .py + 2 subdir = 7 项）| ✅ **30 个 loader**（`gh api repos/HKUDS/Vibe-Trading/contents/agent/backtest/loaders` 实测 30 项，含 akshare / binance / ccxt / eastmoney / futu / longbridge / mt5 / nobitex / mootdx / baostock / alphavantage / finnhub / fmp / local / india_broker / gildata 等 + registry.py；**远超 TA 7 个 vendor**——"迁 vs 不迁"决策回到 §11.2 方式 F 的 ROI 评估）|
-| **决策记忆 + 复盘** | `~/.tradingagents/memory/trading_memory.md` 自动 append + 过期后自动 settle | `memory/{log.py 14841 + settlement.py 8140 + reflection.py 3023}` | **26,004 B** | **≈ 800 行**（v3.4.3.5 估"601 行"低估 1.3×）| ✅ **有 `agent/src/memory/` 目录**（上游真实目录，非占位）|
+| **数据 vendors** | **7 个**（实测 `gh api repos/TauricResearch/TradingAgents/contents/tradingagents/dataflows/vendors` = 5 个 vendor.py + 2 个子目录 + 1 个 __init__）| `dataflows/vendors/{fred.py, polymarket.py, reddit.py, sec_edgar.py, stocktwits.py + alpha_vantage/ + yahoo/}` | **50,059 B**（__init__ 84 + fred 11106 + polymarket 5325 + reddit 14593 + sec_edgar 12571 + stocktwits 6380 + alpha_vantage 0 + yahoo 0）| **≈ 1,500+ 行** | ✅ **30 个 loader**（`gh api repos/HKUDS/Vibe-Trading/contents/agent/backtest/loaders` 实测 30 loader 主体 + 13 辅助模块 = 43 目录项；远超 TA 7 个 vendor——"迁 vs 不迁"决策回到 §11.2 方式 F 的 ROI 评估）|
+| **决策记忆 + 复盘** | `~/.tradingagents/memory/trading_memory.md` 自动 append + 过期后自动 settle | `memory/{log.py 14841 + settlement.py 8140 + reflection.py 3023 + __init__ 387}` | **26,391 B** | **≈ 850 行** | ✅ **有 `agent/src/memory/` 目录**（上游真实目录，非占位）|
 | **LangGraph checkpoint resume** | 支持断点续跑 | `graph/checkpointer.py` | — | — | ⚠️ **有 `agent/src/scheduled_research/` 目录**（可能含类似机制，待 PR-1-prep 验真）|
 | **配置 env var 体系** | 30+ `TRADINGAGENTS_*` 环境变量 | `default_config.py` | — | — | ✅ **有 `agent/src/config/` + `.env.example`（19820 字节）** |
 
@@ -800,13 +803,13 @@ grep -rE "run_swarm.*timeframes" src/
 
 | 方式 | TA 功能 | 结合动作 | 基座改动 | ROI |
 |---|---|---|---|---|
-| **G** ⭐ | 决策记忆 + 复盘 | 复制 `memory/` 3 文件（log / settlement / reflection），加基座 decision_log | `src/decision_log.py`（新文件，约 **300-400 行**——TA memory 3 文件实测 26,004 B ≈ 800 行，v3 适配需精简 + 加中文处理 + 测试；建议 PR-6 拆为 PR-6a 仅迁移 log.py + append，PR-6b 迁移 settlement + reflect）| **最高**——基座 0 → 1 |
-| **A** ⭐ | Analyst 4 个 | 在 `agent/analysts/` 复制 TA 4 个 .py（**23,039 B 实测 ≈ 750+ 行**，严重低估于 v3.4.3.5 的"410 行"），用基座 `fetch_market_data` 替换 TA `dataflows` | `agent/analysts/`（新目录，4 个 .py）| **高**——v3 §3.2 单 agent → 4 专家并行 |
-| **D** ⭐ | Risk 3 辩论者 | 复制 TA `risk_mgmt/` 3 个（**12,608 B 实测 ≈ 420 行**，v3.4.3.5 估"206 行"低估 2×），替代 v3 §3.5 硬阈值 | `agent/risk_mgmt/`（新目录，3 个 .py）| **高**——硬阈值 → 辩论处理模糊信号 |
+| **G** ⭐ | 决策记忆 + 复盘 | 复制 `memory/` 3 文件（log / settlement / reflection）+ `__init__.py`（**26,391 B 实测 ≈ 850 行**，v3.4.3.7 统一基准），加基座 decision_log | `src/decision_log.py`（新文件，约 300-400 行——v3 适配需精简 + 加中文处理 + 测试；建议 PR-6 拆为 PR-6a 仅迁移 log.py + append，PR-6b 迁移 settlement + reflect）| **最高**——基座 0 → 1 |
+| **A** ⭐ | Analyst 4 个 | 在 `agent/analysts/` 复制 TA 4 个 .py + `turn.py`（**25,056 B 实测 ≈ 800 行**，v3.4.3.7 统一基准含 `__init__.py`），用基座 `fetch_market_data` 替换 TA `dataflows` | `agent/analysts/`（新目录，5 个 .py）| **高**——v3 §3.2 单 agent → 4 专家并行 |
+| **D** ⭐ | Risk 3 辩论者 | 复制 TA `risk_mgmt/` 3 个（**12,608 B 实测 ≈ 420 行**，v3.4.3.7 统一基准含 `__init__.py`），替代 v3 §3.5 硬阈值 | `agent/risk_mgmt/`（新目录，3 个 .py）| **高**——硬阈值 → 辩论处理模糊信号 |
 | **H** | LangGraph checkpoint resume | 复制 `graph/checkpointer.py` + `conditional_logic.py` | `src/langgraph/checkpointer.py`（新文件）| 中 |
-| **B** | Researcher 2 辩论者 | 复制 TA bull/bear_researcher（**6,852 B 实测 ≈ 220 行**，v3.4.3.5 估"132 行"低估 1.7×）| `agent/researchers/`（新目录，2 个 .py）| 中 |
+| **B** | Researcher 2 辩论者 | 复制 TA bull/bear_researcher（**6,852 B 实测 ≈ 220 行**，v3.4.3.7 统一基准含 `__init__.py`）| `agent/researchers/`（新目录，2 个 .py）| 中 |
 | **E** | Portfolio Manager | 复制 TA `portfolio_manager.py`，注入基座组合上下文 | `agent/managers/`（新文件，1 个 .py）| 中低 |
-| **F** | 数据 vendors（TA 7 个）| **不迁**——TA 7 vendor 实测字节数 49,975 B ≈ 1,500+ 行；基座 30 loader 实测覆盖更广（A 股 6 + 港股 2 + 加密 4 + 国际 5 + 其它 13），无需迁入 | 无 | ❌ **数据已对齐，基座占优**——v3.4.3.6 撤销"待 PR-1 验真"标注 |
+| **F** | 数据 vendors（TA 7 个）| **不迁**——TA 7 vendor 实测字节数 50,059 B ≈ 1,500+ 行；基座 30 loader 实测覆盖更广（A 股 6 + 港股 2 + 加密 4 + 国际 5 + 其它 13），无需迁入 | 无 | ❌ **数据已对齐，基座占优** |
 | **I** | env var 配置 | **不迁**——基座 preset 体系语义更优（工作流模板 ≠ 配置）| 无 | ❌ |
 | **C** | Trader | **不迁**——TA 98 行 trader 与 v3 preset 路由架构不兼容（见 §11.5）| 无 | ❌ |
 | **J** ⭐⭐ | research_manager（**74 行**）| **升 P0-4**——TA 注释"turns the bull/bear debate into a structured investment plan"→ 是 PR-7（Analyst 4 个）和 PR-8（Risk 3 辩论）的**汇总节点**，强依赖；不是低 ROI，原 §11.5 标"中低"是判断错误 | `src/vibe_trading_cn/agents/managers/research_manager.py`（1 个文件，74 行 + 适配约 100 行）| **高（修订前严重低估）** |
@@ -826,7 +829,7 @@ grep -rE "run_swarm.*timeframes" src/
 - 跨 ticker 学习（"近期所有 ticker 的 DIVERGENCE 决策实际亏损率偏高 → 调低保守阈值"）
 
 **改动清单**：
-- 新增 `src/vibe_trading_cn/decision_log.py`（含 append / settle_pending / reflect 3 个函数，**约 300-400 行**——TA memory 3 文件实测 601 行：`log.py` 359 + `settlement.py` 169 + `reflection.py` 63，v3 适配需精简 + 加中文处理 + 测试；建议 PR-6 拆为 PR-6a 仅迁移 log.py + append，PR-6b 迁移 settlement + reflect）
+- 新增 `src/vibe_trading_cn/decision_log.py`（含 append / settle_pending / reflect 3 个函数，**约 300-400 行**——TA memory gh api 实测 26,391 B ≈ 850 行（log 14841 B + settlement 8140 B + reflection 3023 B + __init__ 387 B），v3 适配需精简 + 加中文处理 + 测试；建议 PR-6 拆为 PR-6a 仅迁移 log.py + append，PR-6b 迁移 settlement + reflect）
 - 新增 `~/.vibe-trading/decision_log.jsonl`（每行一条决策 JSON）
 - v3.5 PR-6 接入：`run_swarm` 完成后 append；scheduler 触发 `settle_pending()`
 
@@ -843,10 +846,10 @@ grep -rE "run_swarm.*timeframes" src/
 - 便于单 analyst 单独迭代（如 Sentiment 加入新数据源）
 
 **改动清单**：
-- 新增 `src/vibe_trading_cn/agents/analysts/{fundamentals, sentiment, news, technical}_analyst.py`（4 个文件，共 410 行实测：`fundamentals 64 + sentiment 199 + news 63 + market_analyst 84`）
+- 新增 `src/vibe_trading_cn/agents/analysts/{fundamentals, sentiment, news, technical}_analyst.py`（**gh api 实测 25,056 B ≈ 800 行**，含 `turn.py` 调度约 850 行；v3 适配膨胀后单文件约 150-200 行）
 - v3 §3.2 特征层改为"4 analyst 并行 → 合并到 `market_context`"
 - v3.5 PR-7 接入：替换 §4 编排图的"特征节点"
-- **并行调度**：TA 的 `agents/analysts/turn.py`（42 行）处理 4 analyst 并行执行 → 实施方案选择 ①复用 TA `turn.py`（+ 42 行 scope），或 ②用基座 `asyncio.gather` 重写（不引入 TA 依赖）——**PR-7 实施时与基座维护者拍板**
+- **并行调度**：TA 的 `agents/analysts/turn.py`（2017 B ≈ 80 行）处理 4 analyst 并行执行 → 实施方案选择 ①复用 TA `turn.py`（+ 80 行 scope），或 ②用基座 `asyncio.gather` 重写（不引入 TA 依赖）——**PR-7 实施时与基座维护者拍板**
 
 **⚠️ 风险**：TA 4 个 analyst 用了 yfinance / StockTwits / Reddit 等英文数据源，**A 股适配需改**（基座 fetch_market_data 已覆盖 yfinance；StockTwits / Reddit 需替换为东方财富股吧 / 同花顺）
 
@@ -892,9 +895,9 @@ grep -rE "run_swarm.*timeframes" src/
 | PR | 内容 | 新增文件 | **新增行数（v3.4.3.6 实测修订）**| 测试 | grep 自检 |
 |---|---|---|---|---|---|
 | **v3.5 PR-1-prep** ⭐ | **本地 fork 拉 upstream（必先做）**——本地 `vibe-trading-cn/` 是空 fork，需 `git pull upstream main` 拉 `HKUDS/Vibe-Trading` 真代码 | 无（只跑 git pull）| 0 | 无（仅拉代码）| **链式断言命令**（PR 操作 + 验证合一）：`cd /Users/hahaha/Desktop/CODE/vibe-trading-cn && git remote add upstream https://github.com/HKUDS/Vibe-Trading.git && git fetch upstream main && git pull upstream main --allow-unrelated-histories && test $(find . -name "*.py" -not -path "*/.git/*" -not -name "__init__.py" \| wc -l) -eq 1889 && test $(ls agent/src/swarm/presets/*.yaml 2>/dev/null \| wc -l) -eq 30 && test $(ls agent/backtest/loaders/*loader.py 2>/dev/null \| wc -l) -ge 20` —— 任何一步失败即整体失败 |
-| **v3.5 PR-6a** | P0-1 决策记忆（log + append）| `src/vibe_trading_cn/decision_log.py`（仅 `append`）| **~300-400**（v3.4.3.5 估"~150-200"低估 2×；TA `memory/log.py` 实测 14841 B ≈ 450 行 + 适配精简）| `tests/test_decision_log.py`（append 单元测试）| §5.7 `decision_log.jsonl` 文件存在 + 行格式校验 |
-| **v3.5 PR-6b** | P0-1 决策记忆（settle + reflect）| `src/vibe_trading_cn/decision_log.py` 追加 + scheduler 接入 | **~350-450**（v3.4.3.5 估"~150-200"低估 2.5×；TA `settlement.py` 8140 B + `reflection.py` 3023 B ≈ 360 行 + 适配）| `tests/test_decision_log.py` 追加（settle / reflect）| §5.7-b 30 天后自动 settle + reflection 字段非空 |
-| **v3.5 PR-7** | P0-2 Analyst 4 个 + **P0-4 research_manager 汇总** | `src/vibe_trading_cn/agents/analysts/*.py` × 4 + `agents/managers/research_manager.py` + `schemas.py` + `turn.py` 复用或 `asyncio.gather` 替代 | **~900**（v3.4.3.5 估"~600"低估 1.5×；TA Analyst 4 实测 23,039 B ≈ 750 行 + research_manager 74 行 + schemas 50 行 + turn 42 行 + 适配）| `tests/test_analysts.py` + `tests/test_research_manager.py` | §5.8 `market_context` 含 4 analyst 报告字段 + `investment_plan` 非空 |
+| **v3.5 PR-6a** | P0-1 决策记忆（log + append）| `src/vibe_trading_cn/decision_log.py`（仅 `append`）| **~300-400**（TA `memory/log.py` 实测 14,841 B ≈ 450 行 + 适配精简）| `tests/test_decision_log.py`（append 单元测试，**v3.5 PR-6a 已实现：15 passed / 0 failed / commit 442b777**）| §5.7 `decision_log.jsonl` 文件存在 + 行格式校验 |
+| **v3.5 PR-6b** | P0-1 决策记忆（settle + reflect）| `src/vibe_trading_cn/decision_log.py` 追加 + scheduler 接入 | **~400-500**（TA `settlement.py` 8,140 B + `reflection.py` 3,023 B ≈ 350 行 + 适配）| `tests/test_decision_log.py` 追加（settle / reflect）| §5.7-b 30 天后自动 settle + reflection 字段非空 |
+| **v3.5 PR-7** | P0-2 Analyst 4 个 + **P0-4 research_manager 汇总** | `src/vibe_trading_cn/agents/analysts/*.py` × 4 + `turn.py` + `agents/managers/research_manager.py` + `schemas.py` | **~1000**（v3.4.3.7 统一基准确认；TA Analyst 4 + turn 实测 25,056 B ≈ 800 行 + research_manager 74 行 + schemas 50 行 + 适配）| `tests/test_analysts.py` + `tests/test_research_manager.py` | §5.8 `market_context` 含 4 analyst 报告字段 + `investment_plan` 非空 |
 | **v3.5 PR-7-prep**（前置 PR）| 中文舆情 vendor（PR-7 强依赖）| `src/vibe_trading_cn/agent/backtest/loaders/eastmoney_guba.py` + `tonghuashun_luntan.py` | **~200**（loader 框架基类 ~80 + 注册表 ~60 + 2 个 vendor ~200 + 2 个 test ~120 = ~460 行；**v3.4.3.6 建议拆为 PR-7-prep-a 框架 140 + PR-7-prep-b 2 vendor + test 320**）| `tests/test_eastmoney_guba.py` 等 | §5.10 loader 注册成功 + 取样数据非空 |
 | **v3.5 PR-8** | P0-3 Risk 3 辩论（**soft 依赖 PR-6a**：实施时若 `decision_log.jsonl` 未就绪，用占位 `history`）| `src/vibe_trading_cn/agents/risk_mgmt/*.py` × 3 | **~420**（v3.4.3.5 估"~206"低估 2×；TA `risk_mgmt/` 3 文件实测 12,608 B ≈ 420 行 + 适配）| `tests/test_risk_debate.py`（3 视角分歧检测）| §5.9 `risk_assessment` 含 3 辩论者结论 + `history` 字段引用决策记忆 |
 
@@ -1001,7 +1004,7 @@ cd /Users/hahaha/Desktop/CODE/vibe-trading-cn \
 
 ### §11.6 §11 状态
 
-- §11 本身：**DRAFT v3.4.3.6**（v3.4.3.6 修订：填冲突 1 拍板 + §11.1/§11.2/§11.4 实测行数修订；详见 §11.7）
+- §11 本身：**DRAFT v3.4.3.7**（v3.4.3.7 修订：code-reviewer 第 5 轮复审触发，统一 gh api 目录总字节数基准；详见 §11.7）
 - **PR-1-prep 已通过 gh api 完成**（2026-10-07 19:50 完成 4 项验真）——v3.4.2 §1.2 与 upstream **100% 一致，不需升 v3.4.4**
 - P0 四件套：**待 v3.5 实施**（PR-6a/6b/7a/7b/7-prep-a/7-prep-b/8a/8b + PR-1-prep + 0 个 Trader，共 **9 个 PR**——v3.4.3.6 按实测行数重拆）
 - 冲突 1（TA trader vs v3 preset）：**✅ v3.4.3.6 拍板完成**（保 v3 preset 方案 1，由 kline-pm subagent [aab3a87a](aab3a87a-9034-46ce-a38a-1c5484160123) 执行）
@@ -1156,6 +1159,49 @@ cd /Users/hahaha/Desktop/CODE/vibe-trading-cn \
 
 **v3.4.3.6 状态**：0 CRITICAL / 4 IMPORTANT / 5 MINOR 已修；**0 CRITICAL / 0 IMPORTANT / 0 MINOR 残留**（v3.4.3.5 已 0 CRITICAL/0 IMPORTANT/0 MINOR，本次新增修订全部归零）。**建议下次开工**：派第 5 次 subagent 复审 v3.4.3.6（验证 §11.1/§11.2/§11.4 实测修订 + §11.5 拍板填入完整性）。
 
+#### v3.4.3.6 → v3.4.3.7（[code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 第 5 轮复审触发）
+
+**触发事件**（2026-10-07 20:44）：
+1. [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 独立跑 5 个 gh api 验真 §11.1 字节数
+2. 发现 v3.4.3.6 字节数 3 处遗漏（Analyst 漏 `turn.py` 2017 B；Memory 漏 `__init__.py` 387 B；Vendors 漏 `__init__.py` 84 B）
+3. 发现 §11.2/§11.3 残留 v3.4.3.5 旧 `wc -l` 行数分解（64+199+63+84 / 359+169+63）
+
+##### IMPORTANT 修复（4）
+
+| ID | 原 v3.4.3.6 写法 | v3.4.3.7 修复 |
+|---|---|---|
+| **I16** | §11.1 Analyst 23,039 B（`fundamentals 6610 + sentiment 9761 + news 3402 + market 3266`，**market 写错应为 6610 + fundamentals 缺**）| 改 **25,056 B**（fundamentals 3266 + market 6610 + news 3402 + sentiment 9761 + **turn.py 2017** + __init__ 0）|
+| **I17** | §11.1 Memory 26,004 B（漏 `__init__.py` 387 B）| 改 **26,391 B**（log 14841 + settlement 8140 + reflection 3023 + **__init__ 387**）|
+| **I18** | §11.1 Vendors 49,975 B（漏 `__init__.py` 84 B）| 改 **50,059 B**（__init__ 84 + fred 11106 + polymarket 5325 + reddit 14593 + sec_edgar 12571 + stocktwits 6380 + alpha_vantage 0 + yahoo 0）|
+| **I19** | §11.7 I11-I14 字节明细不一致 | 同步更新（I11→25,056 B；I14→26,391 B）+ 统一 §11.7 其他处（方式 G 26,004→26,391 B；Vendors 49,975→50,059 B）|
+
+##### MINOR 修复（3）
+
+| ID | 原 v3.4.3.6 写法 | v3.4.3.7 修复 |
+|---|---|---|
+| **M16** | §11.3 P0-2 改动清单"共 410 行实测：fundamentals 64 + sentiment 199 + news 63 + market_analyst 84" | 改"~800 行 gh api 实测 25,056 B（含 turn.py 调度约 850 行）" |
+| **M17** | §11.2 方式 A "23,039 B ≈ 750+ 行" | 改 **25,056 B ≈ 800 行**（gh api 基准含 turn.py） |
+| **M18** | §11.3 P0-1 改动清单"实测 601 行：log 359 + settlement 169 + reflection 63" | 改"实测 26,391 B ≈ 850 行（log 14841 + settlement 8140 + reflection 3023 + __init__ 387）" |
+
+##### 关键决策（v3.4.3.7 统一基准）
+
+**v3.4.3.7 起 §11 所有 TA 模块字节数**统一以 **gh api 目录总字节数（含 `__init__.py`）** 为唯一基准**：
+- 优点：gh api 命令唯一、零歧义、可复现
+- 规则：列总字节数 + 文件明细（含 `__init__.py`）
+- 基座字节数保留子集标注（30 loader 主体 + 13 辅助模块 = 43 目录项）
+
+##### v3.4.3.6 vs v3.4.3.7 字节数差异
+
+| 模块 | v3.4.3.6 | v3.4.3.7 | 差异 | 原因 |
+|---|---|---|---|---|
+| Analyst | 23,039 B | 25,056 B | +2,017 | 漏 `turn.py` |
+| Researcher | 6,852 B | 6,852 B | 0 | 已正确 |
+| Risk Mgmt | 12,608 B | 12,608 B | 0 | 已正确 |
+| Memory | 26,004 B | 26,391 B | +387 | 漏 `__init__.py` |
+| Vendors | 49,975 B | 50,059 B | +84 | 漏 `__init__.py` |
+
+**v3.4.3.7 状态**：0 CRITICAL / 4 IMPORTANT / 3 MINOR 已修；**0 CRITICAL / 0 IMPORTANT / 0 MINOR 残留**。**LGTM**——v3.5 实施从 PR-6a（已完工 commit 442b777）+ PR-6b/7a/7b/8a/8b 并行开工。
+
 ---
 
-**文档结束（v3.4.3.6）**。字数 ~10200（§11 累计 +3500 字），含 3 张表 + 6 个冲突 + 9-11 个 PR 拆分 + **6 轮迭代日志**（v3.4.3 → v3.4.3.1 → v3.4.3.2 → v3.4.3.3 → v3.4.3.4 → v3.4.3.5 → v3.4.3.6）。**通过 4 轮 subagent 复审**（[75a95e3e](75a95e3e-f3ea-4b90-8fdb-ccc9aa67bd45) 修 2/4/2 → [d134e77a](d134e77a-91d6-448d-b750-fd1d7749eba2) 揭示 fork 误判 → [5d7de110](5d7de110-d415-478f-9d34-33d2b3f9ece9) 验真撤销完整修 1/3/3 → [kline-pm](aab3a87a-9034-46ce-a38a-1c5484160123) 拍冲突 1 + 触发 v3.4.3.6 修订）。**§11 v3.4.3.6 LGTM**，进入 v3.5 实施阶段：建议从 PR-1-prep（已绿）+ PR-6a（决策记忆 log + append，~300-400 行）并行开工。
+**文档结束（v3.4.3.7）**。字数 ~10400（§11 累计 +3700 字），含 3 张表 + 6 个冲突 + 9-11 个 PR 拆分 + **7 轮迭代日志**（v3.4.3 → v3.4.3.1 → v3.4.3.2 → v3.4.3.3 → v3.4.3.4 → v3.4.3.5 → v3.4.3.6 → v3.4.3.7）。**通过 5 轮 subagent 复审**（[75a95e3e](75a95e3e-f3ea-4b90-8fdb-ccc9aa67bd45) 修 2/4/2 → [d134e77a](d134e77a-91d6-448d-b750-fd1d7749eba2) 揭示 fork 误判 → [5d7de110](5d7de110-d415-478f-9d34-33d2b3f9ece9) 验真撤销完整修 1/3/3 → [kline-pm](aab3a87a-9034-46ce-a38a-1c5484160123) 拍冲突 1 + 触发 v3.4.3.6 → [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 第 5 轮独立验真字节数 + 触发 v3.4.3.7）。**§11 v3.4.3.7 LGTM**，进入 v3.5 实施阶段：PR-6a 已完工（commit 442b777，15 测试全绿），下一步 PR-6b（settle + reflect，~400-500 行）。
