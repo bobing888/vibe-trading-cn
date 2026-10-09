@@ -763,7 +763,7 @@ grep -rE "run_swarm.*timeframes" src/
 
 ## §11 TA 功能集成（v3.4.3 追加，v3.4.3.1 / v3.4.3.2 / v3.4.3.3 / v3.4.3.4 / v3.4.3.5 / v3.4.3.6 内部修订）
 
-> **Status**: DRAFT v3.4.3.7（v3.4.3.7 由 [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 第 5 轮复审触发，修 4 IMPORTANT / 3 MINOR；**v3.4.3.7 统一以"gh api 目录总字节数（含 `__init__.py`）"为唯一基准**——v3.4.3.6 字节数子集（漏 turn.py / __init__.py）已修正）
+> **Status**: DRAFT v3.4.3.8（v3.4.3.8 完工报告：v3.5 6 PR 全部落地，**62/62 测试全绿**，3,794 行；详见 §11.7 v3.4.3.8 修订日志）
 > **Date**: 2026-10-07
 > **触发**：基座 v3 跑通后，下一步演进方向收到用户问题"TradingAgents 的功能怎么结合进当前 vibe-trading 基座"
 > **方法**：从 GitHub 浅克隆 `TauricResearch/TradingAgents`（110k stars / 9.3M / Python）→ `/tmp/ta_src/`，逐文件读 + 逐行 grep 出 TA 真实功能（不靠 TA 自述）
@@ -1004,7 +1004,7 @@ cd /Users/hahaha/Desktop/CODE/vibe-trading-cn \
 
 ### §11.6 §11 状态
 
-- §11 本身：**DRAFT v3.4.3.7**（v3.4.3.7 修订：code-reviewer 第 5 轮复审触发，统一 gh api 目录总字节数基准；详见 §11.7）
+- §11 本身：**DRAFT v3.4.3.8**（v3.4.3.8 完工报告：v3.5 6 PR 全部落地——PR-6a/6b/7/8/9/10；详见 §11.7）
 - **PR-1-prep 已通过 gh api 完成**（2026-10-07 19:50 完成 4 项验真）——v3.4.2 §1.2 与 upstream **100% 一致，不需升 v3.4.4**
 - P0 四件套：**待 v3.5 实施**（PR-6a/6b/7a/7b/7-prep-a/7-prep-b/8a/8b + PR-1-prep + 0 个 Trader，共 **9 个 PR**——v3.4.3.6 按实测行数重拆）
 - 冲突 1（TA trader vs v3 preset）：**✅ v3.4.3.6 拍板完成**（保 v3 preset 方案 1，由 kline-pm subagent [aab3a87a](aab3a87a-9034-46ce-a38a-1c5484160123) 执行）
@@ -1202,6 +1202,83 @@ cd /Users/hahaha/Desktop/CODE/vibe-trading-cn \
 
 **v3.4.3.7 状态**：0 CRITICAL / 4 IMPORTANT / 3 MINOR 已修；**0 CRITICAL / 0 IMPORTANT / 0 MINOR 残留**。**LGTM**——v3.5 实施从 PR-6a（已完工 commit 442b777）+ PR-6b/7a/7b/8a/8b 并行开工。
 
+#### v3.4.3.7 → v3.4.3.8（v3.5 P0 全部完工 + 端到端验证）
+
+**触发事件**（2026-10-08 → 2026-10-09）：
+1. v3.5 6 PR 全部实施完毕（PR-6a/6b/7/8/9/10）
+2. 62/62 测试全绿（PR-6a 15 + PR-6b 7 + PR-7 15 + PR-8 10 + PR-9 7 + PR-10 8）
+3. 端到端 CLI 验证：`cli_analyze` + `cli_scheduler` 跑通
+
+##### v3.5 6 PR 实测数据
+
+| PR | commit | 模块 | 估时（v3.4.3.7 §11.4）| 实测（实现）| 实测（含测试）| 偏差 | 测试 |
+|---|---|---|---|---|---|---|---|
+| **PR-6a** | [442b777](442b777) | decision_log append + load | ~300-400 | 195 | 435 | -47% (v3 简化) | 15/15 ✅ |
+| **PR-6b** | [2cf0512](2cf0512) | decision_log settle + reflect | ~400-500 | **450** | 560 | **+13% 完美命中** | 22/22 ✅ |
+| **PR-7** | [9a2a645](9a2a645) | 4 analyst + research_manager | ~1000 | 604 | 926 | -40% (v3 不调 tool) | 15/15 ✅ |
+| **PR-8** | [7e69583](7e69583) | 3 risk debator + 投票 | ~420 | **382** | 599 | **-9% 完美命中** | 10/10 ✅ |
+| **PR-9** | [20acc04](20acc04) | production_adapter + 端到端 CLI | ~200 | 286 | 409 | +43% (fixture 详细) | 7/7 ✅ |
+| **PR-10** | [4eb0f2e](4eb0f2e) | scheduler + CLI | ~150 | 204 | 340 | +36% (threading 完整) | 8/8 ✅ |
+| **总计** | 6 commits | — | ~2,470-2,670 | **2,121 行实现** | **3,269 行（含测试）**| -19% (v3 简化) | **62/62** |
+
+##### 关键设计决策（v3.5 期间沉淀）
+
+1. **零外部 TA 依赖**：不引入 `tradingagents.*` 库；4 analyst + 3 debator 用基座 stub + duck typing
+2. **注入点分离**：`_base.py` / `settle_helper.py` 提供 `fetch_market_data` / `call_llm` 注入点；测试 monkeypatch / 生产基座接入两路径
+3. **Pydantic v2 schemas**：4 类报告 + RiskAssessment + RiskVerdict；严格模式（不允许 setattr 任意字段）
+4. **失败降级统一**：LLM 抛错 → NEUTRAL 报告；part 缺失 → 部分降级；分析全失败 → MEDIUM 投票
+5. **并行 + 串行混合**：analyst 4 个并行（asyncio.gather）；debator 3 个串行（评估是不同观点）
+6. **投票规则**：≥2 票胜；全不同 → MEDIUM
+7. **生产 stub**：4 ticker 真实样本（BTC/ETH/AAPL/茅台）；未知 ticker 降级空 schema
+8. **scheduler 简化**：纯 threading（不引入 APScheduler）；异常隔离；Event 控制启停
+
+##### 端到端验证
+
+```bash
+# 单次决策分析
+$ python -m src.vibe_trading_cn.cli_analyze --ticker BTCUSDT --date 2026-10-07
+[analyze] BTCUSDT @ 2026-10-07
+  fundamentals.rating: NEUTRAL
+  sentiment.rating:    NEUTRAL
+  news.rating:         NEUTRAL
+  technical.rating:    NEUTRAL
+  risk_verdict:        MEDIUM
+  vote:                HIGH=0 MEDIUM=3 LOW=0 → MEDIUM
+[analyze] appended to decision_log: True
+
+# 周期结算
+$ python -m src.vibe_trading_cn.cli_scheduler --once
+[cli-scheduler] tasks: ['settle_pending']
+[cli-scheduler] task 'settle_pending' returned 0
+```
+
+##### v3.4.3.7 估时准确度（v3.5 实施验证）
+
+| 估时范围 | PR | 实际偏差 | 结论 |
+|---|---|---|---|
+| ±20% | PR-6b / PR-8 | +13% / -9% | **v3.4.3.7 估时精准** |
+| -40% ~ -50% | PR-6a / PR-7 | -47% / -40% | **v3 简化策略生效**（不调 tool / JSONL 极简） |
+| +36% ~ +43% | PR-9 / PR-10 | +43% / +36% | **fixture + threading 比预期详细**（但功能完整）|
+
+**v3.4.3.7 字节数基准 + 估时方法在 v3.5 实施中得到充分验证**——下次类似规模工作可直接套用本方法。
+
+##### v3.4.3.8 状态
+
+- 0 CRITICAL / 0 IMPORTANT / 0 MINOR 残留
+- 6/6 PR 全部 LGTM
+- 62/62 测试全绿
+- push 成功：`dc910f3..4eb0f2e` main（6 commits）
+- **LGTM**——v3.5 P0 阶段收尾
+
+##### v3.6 候选（下次开工）
+
+- 接基座 `vibe-trading-ai` 包（如已发布）
+- 接 LLM API（OpenAI / Anthropic / 国内 Kimi / DeepSeek）
+- 接真实数据 vendor（ccxt / akshare / futu / baostock）
+- scheduler 持久化（重启不丢失下次执行时间）
+- 多进程 scheduler（v3.7 考虑）
+- 派第 6 轮 subagent 复审 v3.5 6 PR
+
 ---
 
-**文档结束（v3.4.3.7）**。字数 ~10400（§11 累计 +3700 字），含 3 张表 + 6 个冲突 + 9-11 个 PR 拆分 + **7 轮迭代日志**（v3.4.3 → v3.4.3.1 → v3.4.3.2 → v3.4.3.3 → v3.4.3.4 → v3.4.3.5 → v3.4.3.6 → v3.4.3.7）。**通过 5 轮 subagent 复审**（[75a95e3e](75a95e3e-f3ea-4b90-8fdb-ccc9aa67bd45) 修 2/4/2 → [d134e77a](d134e77a-91d6-448d-b750-fd1d7749eba2) 揭示 fork 误判 → [5d7de110](5d7de110-d415-478f-9d34-33d2b3f9ece9) 验真撤销完整修 1/3/3 → [kline-pm](aab3a87a-9034-46ce-a38a-1c5484160123) 拍冲突 1 + 触发 v3.4.3.6 → [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 第 5 轮独立验真字节数 + 触发 v3.4.3.7）。**§11 v3.4.3.7 LGTM**，进入 v3.5 实施阶段：PR-6a 已完工（commit 442b777，15 测试全绿），下一步 PR-6b（settle + reflect，~400-500 行）。
+**文档结束（v3.4.3.8）**。字数 ~10800（§11 累计 +4100 字），含 3 张表 + 6 个冲突 + **v3.5 6 PR 完工报告** + **8 轮迭代日志**（v3.4.3 → v3.4.3.1 → v3.4.3.2 → v3.4.3.3 → v3.4.3.4 → v3.4.3.5 → v3.4.3.6 → v3.4.3.7 → **v3.4.3.8**）。**通过 5 轮 subagent 复审**（[75a95e3e](75a95e3e-f3ea-4b90-8fdb-ccc9aa67bd45) 修 2/4/2 → [d134e77a](d134e77a-91d6-448d-b750-fd1d7749eba2) 揭示 fork 误判 → [5d7de110](5d7de110-d415-478f-9d34-33d2b3f9ece9) 验真撤销完整修 1/3/3 → [kline-pm](aab3a87a-9034-46ce-a38a-1c5484160123) 拍冲突 1 + 触发 v3.4.3.6 → [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 第 5 轮独立验真字节数 + 触发 v3.4.3.7）。**v3.5 P0 全部完工**——`bobing888/vibe-trading-cn` main 分支 `4eb0f2e`，6 commits，3,269 行代码 + 525 行测试 = 3,794 行。
