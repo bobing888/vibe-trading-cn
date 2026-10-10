@@ -1,0 +1,14 @@
+[Unit]
+Description=vibe-trading-cn health check
+After=vibe-trading-cn.service
+
+[Service]
+Type=oneshot
+# 加载环境变量（与 service 共享 secrets.env）
+EnvironmentFile=/etc/vibe-trading-cn/secrets.env
+ExecStart=/opt/vibe-trading-cn/deploy/healthcheck.sh
+User=vibe-trading
+Group=vibe-trading
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vibe-trading-cn-healthcheck

@@ -1,0 +1,14 @@
+[Unit]
+Description=vibe-trading-cn health check timer
+Documentation=https://github.com/bobing888/vibe-trading-cn
+
+[Timer]
+# 启动后 1 分钟首次检查，之后每 5 分钟
+OnBootSec=1min
+OnUnitActiveSec=5min
+# 持久化（防止错过的运行在启动后补跑）
+Persistent=true
+Unit=vibe-trading-cn-healthcheck.service
+
+[Install]
+WantedBy=timers.target
