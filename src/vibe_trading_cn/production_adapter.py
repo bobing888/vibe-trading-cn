@@ -25,6 +25,23 @@ logger = logging.getLogger(__name__)
 _vendor_init_lock = threading.Lock()
 
 
+def _try_base_first(ticker: str, trade_date: str) -> Optional[dict[str, Any]]:
+    """v3.5 PR-14：基座 vibe-trading-ai 优先（duck typing）
+
+    Returns: 基座返回的 dict（已含 v3 schema）；基座未装/异常 → None
+    """
+    try:
+        from .base_adapter import get_base_adapter
+        a = get_base_adapter()
+        return a.fetch_market_data(ticker, trade_date)
+    except ImportError:
+        # 基座未装（最常见 — 跳过 logging）
+        return None
+    except Exception as e:
+        logger.warning(f"[adapter] base fetch failed: {e}; falling back to vendor")
+        return None
+
+
 def _try_vendor_first(ticker: str, trade_date: str) -> Optional[dict[str, Any]]:
     """v3.5 PR-13：尝试真实 vendor，失败返回 None（让 caller 降级 fixture）
 
@@ -47,11 +64,15 @@ def _try_vendor_first(ticker: str, trade_date: str) -> Optional[dict[str, Any]]:
 
 
 def fetch_market_data(ticker: str, trade_date: str) -> dict[str, Any]:
-    """生产数据获取：vendor 优先 → fixture 降级
+    """三级降级：基座 → 真实 vendor → fixture
 
-    优先：真实 vendor（ccxt / yfinance）
-    降级：_fixture（4 ticker 真实样本；未知 ticker 空 schema）
+    优先：vibe-trading-ai 基座（如果装好）
+    次优：真实 vendor（ccxt / yfinance）
+    兜底：_fixture（4 ticker 真实样本；未知 ticker 空 schema）
     """
+    base_data = _try_base_first(ticker, trade_date)
+    if base_data is not None:
+        return base_data
     vendor_data = _try_vendor_first(ticker, trade_date)
     if vendor_data is not None:
         return vendor_data
