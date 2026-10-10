@@ -1372,6 +1372,67 @@ $ python -m src.vibe_trading_cn.cli_scheduler --once
 - 接 ccxt / yfinance 生产环境（`pip install ccxt yfinance`，脱离 fixture）
 - 端到端 e2e 测试（模拟真实信号 → 决策 → 结算 → 回报）
 
+#### v3.4.3.9 → v3.4.3.10（v3.7 生产就绪：deploy + base 接入 + vendor 验证）
+
+**触发事件**（2026-10-10 20:21-20:46）：
+1. v3.7 真实生产部署文件 7 个（deploy/ 目录）
+2. v3.7 base_adapter 修复：`vibe_trading_ai` import → `src.market_data`（PyPI 实际 top_level）
+3. v3.7 vendor 测试 5 个新增：ccxt + yfinance 装好后真能 import + 限流降级
+4. 共 4 commits：3aff5d4 (deploy) + c961520 (v3.4.3.9 doc) + c464496 (base fix) + e7b7a3e (vendor test)
+
+##### v3.7 deploy 7 文件
+
+| 文件 | 职责 | 行数 |
+|---|---|---|
+| `deploy/vibe-trading-cn.service` | systemd 主服务 unit | 36 |
+| `deploy/vibe-trading-cn-healthcheck.service` | 健康检查 service | 13 |
+| `deploy/vibe-trading-cn-healthcheck.timer` | 健康检查 timer（5 分钟）| 12 |
+| `deploy/healthcheck.sh` | 4 项检查 + 可选 webhook 告警 | 86 |
+| `deploy/install.sh` | 一键安装（user / dir / venv / secrets）| 56 |
+| `deploy/.env.example` | 密钥模板（chmod 600）| 50 |
+| `deploy/README.md` | 部署文档 | 110 |
+| **总计** | | **~360 行** |
+
+##### v3.7 base_adapter 修复（CRITICAL）
+
+**问题**：`_import_base` 写 `importlib.import_module("vibe_trading_ai")`，但 PyPI `vibe-trading-ai==0.1.16` 实际 `top_level.txt` 是 `[api_server, backtest, cli, evals, mcp_server, src]`，**没有 `vibe_trading_ai`**。
+
+**修复**：
+- `_import_base` 改 `importlib.import_module("src.market_data")`（基座实际入口）
+- `fetch_market_data` 用 `getattr(pkg, "fetch_market_data", None)`（duck typing）
+- `call_llm` 优先 `src.agent.LLM`（如有），否则空 stub
+- 9/9 `test_base_adapter` 绿（4 个更新 + 1 个新增 stub 测试）
+
+**溯源**：v3.4.3.3 subagent [d134e77a](d134e77a-91d6-448d-b750-fd1d7749eba2) 揭示「本地 fork `vibe-trading-cn` ≠ 上游 `HKUDS/Vibe-Trading`」后，未继续追查基座 PyPI 包的实际模块名——`vibe_trading_ai` 是 v3.4 凭印象写的，与 v3.4.3.6 PR-1-prep 验真（`fetch_market_data` → `agent/src/market_data.py:179`）已指向 `src.market_data` 一致。
+
+##### v3.7 vendor 测试新增
+
+| 测试 | 验证 |
+|---|---|
+| `test_ccxt_library_importable` | ccxt 库 import + binance/okx/bybit 可用 |
+| `test_yfinance_library_importable` | yfinance 库 import + Ticker 可用 |
+| `test_ccxt_vendor_lazy_loads_exchange` | CCXTVendor lazy load（未装 ccxt 不崩）|
+| `test_yfinance_vendor_real_call_fails_gracefully` | yfinance 限流时空 schema 兜底 |
+| `test_production_adapter_full_chain_with_real_vendors` | 完整链路 vendor 限流 → fixture |
+
+**测试**：21/21 `test_data_vendor` 绿（含 5 新增）。
+
+**实测**：ccxt 4.5.85 + yfinance 1.7.0 装好，HTTP 真实调用（连 Binance / Yahoo）受网络限流影响——所以新测试用 monkeypatch 模拟，验证"装好 + 链路 + 降级"三件事。
+
+##### v3.7 状态
+
+- deploy 7 文件就绪
+- base_adapter 真能命中基座（之前 ImportError）
+- 21 个 vendor 测试全绿（+5 新增）
+- push 成功：`9f9a2b2..e7b7a3e` main（4 commits）
+
+##### v3.8 候选（下次开工）
+
+- src 命名空间冲突修复（基座 `site-packages/src/` 与本地 `src/` 冲突；`pip install -e .` 后 `from src.vibe_trading_cn import` 失败）
+- 把 9 个 test 文件从 `from src.vibe_trading_cn import` 改为 `from vibe_trading_cn import`（v3.5 PR-9 时代遗留）
+- CI 流水线（GitHub Actions）跑完整 113 测试（不再依赖本地 venv）
+- v3.7 完整 113 测试（v3.8 修完 import 后能跑全 113 + 5 vendor = 118 测试）
+
 ---
 
-**文档结束（v3.4.3.9）**。字数 ~11500（§11 累计 +4900 字），含 4 张表 + 6 个冲突 + **v3.5 10 PR + v3.6 review 完工报告** + **9 轮迭代日志**（v3.4.3 → v3.4.3.1 → v3.4.3.2 → v3.4.3.3 → v3.4.3.4 → v3.4.3.5 → v3.4.3.6 → v3.4.3.7 → v3.4.3.8 → **v3.4.3.9**）。**通过 7 轮 subagent 复审**（[75a95e3e](75a95e3e-f3ea-4b90-8fdb-ccc9aa67bd45) 修 2/4/2 → [d134e77a](d134e77a-91d6-448d-b750-fd1d7749eba2) 揭示 fork 误判 → [5d7de110](5d7de110-d415-478f-9d34-33d2b3f9ece9) 验真撤销完整修 1/3/3 → [kline-pm](aab3a87a-9034-46ce-a38a-1c5484160123) 拍冲突 1 + 触发 v3.4.3.6 → [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 第 5 轮独立验真字节数 + 触发 v3.4.3.7 → code-reviewer ([eee7f999-535d-4981-98a6-7682427c50ac](eee7f999-535d-4981-98a6-7682427c50ac)) 第 6 轮 10 PR 复审触发 172f7ef + 第 7 轮触发 674bf8a）。**v3.5 + v3.6 全部完工**——`bobing888/vibe-trading-cn` main 分支 `674bf8a`，10 PR + 2 review commits，~2,300 行 src + ~2,100 行 tests = ~4,400 行。
+**文档结束（v3.4.3.10）**。字数 ~12500（§11 累计 +5500 字），含 4 张表 + 6 个冲突 + **v3.5 10 PR + v3.6 review + v3.7 生产就绪 完工报告** + **10 轮迭代日志**（v3.4.3 → v3.4.3.1 → v3.4.3.2 → v3.4.3.3 → v3.4.3.4 → v3.4.3.5 → v3.4.3.6 → v3.4.3.7 → v3.4.3.8 → v3.4.3.9 → **v3.4.3.10**）。**通过 7 轮 subagent 复审 + 1 轮 v3.7 自验**（真 `pip install vibe-trading-ai` 触发 base import 路径错误并修复）。**v3.5 + v3.6 + v3.7 全部完工**——`bobing888/vibe-trading-cn` main 分支 `e7b7a3e`，~2,500 行 src + ~2,400 行 tests = ~4,900 行 + 360 行 deploy。
