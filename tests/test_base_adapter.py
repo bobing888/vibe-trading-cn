@@ -78,59 +78,63 @@ class TestVibeTradingAIAdapter:
     """vibe-trading-ai 包接入（mock 包，未真装）"""
 
     def test_adapter_imports_base_package_dynamically(self, monkeypatch) -> None:
-        """动态 import vibe_trading_ai（避免硬依赖）"""
+        """动态 import 基座入口（v3.7 修复：基座实际是 src.market_data）"""
         from src.vibe_trading_cn import base_adapter
 
-        # 模拟基座包：用 types.ModuleType 构造真 module
-        fake_pkg = types.ModuleType("vibe_trading_ai")
+        # v3.7 修复：基座实际入口是 src.market_data
+        # 同时保留对 vibe_trading_ai 的向后兼容（如果有老基座包）
+        fake_pkg = types.ModuleType("src.market_data")
 
-        def fake_get_market_data(ticker, trade_date):
+        def fake_fetch_market_data(ticker, trade_date):
             return {"ticker": ticker, "trade_date": trade_date, "ohlcv": {"x": 1}, "fundamentals": {}, "news": [], "social": {}}
 
-        class FakeLLM:
-            def call(self, messages):
-                return type("R", (), {"content": "BASE_OK"})()
-
-        fake_pkg.get_market_data = fake_get_market_data
-        fake_pkg.LLM = FakeLLM
-        monkeypatch.setitem(sys.modules, "vibe_trading_ai", fake_pkg)
+        fake_pkg.fetch_market_data = fake_fetch_market_data
+        monkeypatch.setitem(sys.modules, "src.market_data", fake_pkg)
 
         a = base_adapter.VibeTradingAIAdapter()
         data = a.fetch_market_data("AAPL", "2026-10-07")
         assert data["ticker"] == "AAPL"
         assert "x" in data["ohlcv"]
 
-    def test_adapter_handles_missing_base_package(self) -> None:
+    def test_adapter_handles_missing_base_package(self, monkeypatch) -> None:
         """基座未装 → 抛 ImportError（让 caller 降级）"""
         from src.vibe_trading_cn import base_adapter
-        import sys
 
-        # 确保基座不在 sys.modules
-        monkeypatch = pytest.MonkeyPatch()
-        monkeypatch.delitem(sys.modules, "vibe_trading_ai", raising=False)
-        try:
-            a = base_adapter.VibeTradingAIAdapter()
-            with pytest.raises((ImportError, AttributeError)):
-                a.fetch_market_data("AAPL", "2026-10-07")
-        finally:
-            monkeypatch.undo()
+        # v3.7 修复：基座入口是 src.market_data；确保其不在 sys.modules
+        monkeypatch.delitem(sys.modules, "src.market_data", raising=False)
+        a = base_adapter.VibeTradingAIAdapter()
+        with pytest.raises((ImportError, AttributeError)):
+            a.fetch_market_data("AAPL", "2026-10-07")
 
     def test_adapter_llm_call(self, monkeypatch) -> None:
+        """v3.7: call_llm 优先 src.agent.LLM（如果有），否则空 stub"""
         from src.vibe_trading_cn import base_adapter
-        import types
 
-        fake_pkg = types.ModuleType("vibe_trading_ai")
+        # 模拟 src.agent 含 LLM 类
+        fake_agent = types.ModuleType("src.agent")
 
         class FakeLLM:
-            def call(self, messages):
+            def __call__(self, messages):
                 return type("R", (), {"content": "BASE_LLM_OK"})()
 
-        fake_pkg.LLM = FakeLLM
-        monkeypatch.setitem(sys.modules, "vibe_trading_ai", fake_pkg)
+        fake_agent.LLM = FakeLLM
+        monkeypatch.setitem(sys.modules, "src.agent", fake_agent)
 
         a = base_adapter.VibeTradingAIAdapter()
         result = a.call_llm([("system", "x")])
         assert result.content == "BASE_LLM_OK"
+
+    def test_adapter_llm_stub_when_no_src_agent(self, monkeypatch) -> None:
+        """v3.7: src.agent 未装 → call_llm 兜底空 stub"""
+        from src.vibe_trading_cn import base_adapter
+
+        # 确保 src.agent 不在 sys.modules
+        monkeypatch.delitem(sys.modules, "src.agent", raising=False)
+
+        a = base_adapter.VibeTradingAIAdapter()
+        result = a.call_llm([("system", "x")])
+        # 兜底：空 content
+        assert result.content == ""
 
 
 # ====================================================================
