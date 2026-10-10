@@ -16,8 +16,10 @@ from __future__ import annotations
 import argparse
 import signal
 import sys
+from pathlib import Path
 
 from .scheduler import Scheduler
+from .scheduler_state import SchedulerState
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,12 +29,16 @@ def main(argv: list[str] | None = None) -> int:
                         help="interval in seconds (default 3600 = 1 hour)")
     parser.add_argument("--task", action="append", default=[],
                         help="task to run (default: all). e.g. --task settle_pending")
+    parser.add_argument("--state-path", type=str, default=None,
+                        help="path to scheduler state JSON (v3.5 PR-11: persist across restarts)")
     args = parser.parse_args(argv)
 
-    s = Scheduler(interval_seconds=args.interval)
-    # 默认任务
+    state_path = Path(args.state_path) if args.state_path else None
+    # 默认任务 + state 路径
     s = Scheduler.default()
     s.interval_seconds = args.interval  # 覆盖默认
+    s._state_path = state_path  # 注入 state 路径
+    s._state = SchedulerState.load_or_default(state_path) if state_path else None
 
     # 任务过滤（默认全部；--task 指定子集）
     if args.task:

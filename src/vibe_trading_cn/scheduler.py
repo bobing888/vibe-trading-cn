@@ -20,9 +20,11 @@ import logging
 import threading
 import time
 import traceback
-from typing import Callable
+from pathlib import Path
+from typing import Callable, Optional
 
 from .decision_log import DecisionLog
+from .scheduler_state import SchedulerState
 
 
 logger = logging.getLogger(__name__)
@@ -44,14 +46,23 @@ def settle_pending_task() -> int:
 
 
 class Scheduler:
-    """简单调度器（threading + 间隔循环）"""
+    """简单调度器（threading + 间隔循环 + 可选 state 持久化）"""
 
-    def __init__(self, interval_seconds: float = 3600) -> None:
+    def __init__(
+        self,
+        interval_seconds: float = 3600,
+        state_path: Path | None = None,
+    ) -> None:
         self.interval_seconds = interval_seconds
         self._tasks: dict[str, Task] = {}
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        # v3.5 PR-11: state 持久化（可选）
+        self._state_path = state_path
+        self._state: Optional[SchedulerState] = (
+            SchedulerState.load_or_default(state_path) if state_path else None
+        )
 
     def add_task(self, name: str, task: Task) -> None:
         """注册一个任务（同名覆盖）"""
@@ -82,6 +93,12 @@ class Scheduler:
             except Exception as e:
                 logger.error(f"[scheduler] task {name!r} failed: {e}\n{traceback.format_exc()}")
                 results[name] = -1
+        # v3.5 PR-11: 持久化 state
+        if self._state is not None and self._state_path is not None:
+            now = time.time()
+            next_run = now + self.interval_seconds
+            self._state.record_run(results, next_run_ts=next_run)
+            self._state.save(self._state_path)
         return results
 
     def start(self) -> None:
