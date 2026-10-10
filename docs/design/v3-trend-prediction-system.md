@@ -761,10 +761,10 @@ grep -rE "run_swarm.*timeframes" src/
 
 ---
 
-## §11 TA 功能集成（v3.4.3 追加，v3.4.3.1 / v3.4.3.2 / v3.4.3.3 / v3.4.3.4 / v3.4.3.5 / v3.4.3.6 内部修订）
+## §11 TA 功能集成（v3.4.3 追加，v3.4.3.1 / v3.4.3.2 / v3.4.3.3 / v3.4.3.4 / v3.4.3.5 / v3.4.3.6 / v3.4.3.7 / v3.4.3.8 / v3.4.3.9 内部修订）
 
-> **Status**: DRAFT v3.4.3.8（v3.4.3.8 完工报告：v3.5 6 PR 全部落地，**62/62 测试全绿**，3,794 行；详见 §11.7 v3.4.3.8 修订日志）
-> **Date**: 2026-10-07
+> **Status**: DRAFT v3.4.3.9（v3.4.3.9 完工报告：v3.5 全 10 PR + v3.6 review 修复全部落地，**113/113 测试全绿**；详见 §11.7 v3.4.3.9 修订日志）
+> **Date**: 2026-10-10（v3.4.3.9 完工）
 > **触发**：基座 v3 跑通后，下一步演进方向收到用户问题"TradingAgents 的功能怎么结合进当前 vibe-trading 基座"
 > **方法**：从 GitHub 浅克隆 `TauricResearch/TradingAgents`（110k stars / 9.3M / Python）→ `/tmp/ta_src/`，逐文件读 + 逐行 grep 出 TA 真实功能（不靠 TA 自述）
 > **基线**：v3.4.2 已锁定的基座 API（§1）+ 已存在的 preset yaml 模板（含 risk_committee.yaml 在内 29 个，非独立 swarm_tool）+ run_swarm 工具（§3.4）+ LangGraph 编排（§4）
@@ -1279,6 +1279,99 @@ $ python -m src.vibe_trading_cn.cli_scheduler --once
 - 多进程 scheduler（v3.7 考虑）
 - 派第 6 轮 subagent 复审 v3.5 6 PR
 
+#### v3.4.3.8 → v3.4.3.9（v3.5 全 10 PR + v3.6 review 修复完工）
+
+**触发事件**（2026-10-10）：
+1. v3.5 收尾 PR（PR-11/12/13/14）实施完毕——scheduler 持久化 + LLM 多 provider + 多 vendor 真实数据 + 基座 vibe-trading-ai 动态接入
+2. 第 6 轮 subagent code-reviewer 复审 10 PR 触发修复 commit `172f7ef`（I3+I4；C1 误报）—— subagent id 见 `/tmp/lessons/2026-10-10-v3.6-production-ready.md`（[eee7f999-535d-4981-98a6-7682427c50ac](eee7f999-535d-4981-98a6-7682427c50ac)）
+3. 第 7 轮 subagent 复审触发修复 commit `674bf8a`（1 CRITICAL + 1 IMPORTANT + 1 MINOR）
+4. 113/113 测试全绿（按 commit message 记录）
+
+##### v3.5 收尾 4 PR 实测数据
+
+| PR | commit | 模块 | 测试增量 | 累计测试 |
+|---|---|---|---|---|
+| **PR-11** | [d6242e9](d6242e9) | scheduler_state JSON 持久化（atomic write + rename）| +8 | 70/70 ✅ |
+| **PR-12** | [5b5c907](5b5c907) | llm_client 多 provider（OpenAI / Kimi / DeepSeek OpenAI-compatible）| +14 | 84/84 ✅ |
+| **PR-13** | [9e10ecf](9e10ecf) | data_vendor ccxt + yfinance（init lock + A 股/加密路由）| +12 | 96/96 ✅ |
+| **PR-14** | [00ad1f1](00ad1f1) | base_adapter 动态 import（基座 vibe-trading-ai 无缝接入）| +8 | 104/104 ✅ |
+| **总计** | 4 commits | — | **+42** | **104/104** |
+
+##### v3.6 review 修复（2 轮 subagent）
+
+| 轮 | commit | 触发 | 修复 |
+|---|---|---|---|
+| **第 6 轮** | [172f7ef](172f7ef) | code-reviewer（[eee7f999-535d-4981-98a6-7682427c50ac](eee7f999-535d-4981-98a6-7682427c50ac)，来源：`/tmp/lessons/2026-10-10-v3.6-production-ready.md`）10 PR 复审 | C1 误报（持久化实测正常）+ I3 interval 硬编码 → `interval_seconds` 参数 + I4 vendor lock 范围拆解（import + init 锁内 / HTTP 锁外）|
+| **第 7 轮** | [674bf8a](674bf8a) | 复审 v3.6 修复未涵盖剩余问题 | **CRITICAL**：llm_client.py 加 retry 3 次（指数退避 1s/2s/4s）—— 触发 5xx/429/timeout/conn error，4xx 不重试 + **IMPORTANT**：data_vendor.py 修 A 股路由（`\d{6}(\.SS|\.SZ)?` 正则，6 位数字 / .SS / .SZ → YFinanceVendor；BTC/USDT 带 / → CCXT）+ **MINOR**：`_fixture.py` 补 file-level docstring（4 ticker 含义）|
+
+第 7 轮净增测试 9 个（5 retry + 4 vendor 路由）→ 累计 **113/113** 全绿。
+
+##### v3.6 关键设计决策（沉淀）
+
+1. **三级降级链**：基座 `vibe-trading-ai` → 真实 vendor（ccxt / yfinance）→ fixture（无外部依赖也能跑）
+2. **scheduler 持久化**：atomic write（write-to-tmp + rename），重启累积 `last_run`，支持中断恢复
+3. **LLM 多 provider**：OpenAI / Kimi / DeepSeek 全部走 OpenAI-compatible HTTP，3 次指数退避重试，失败兜底空 content（避免 30s × N 超时）
+4. **vendor init 锁优化**：只护 `import` + `__init__`（避免 4 线程并发 ccxt 死锁），HTTP 请求锁外并行（4 analyst 真正并行）
+5. **无 API key stub**：`production_adapter` 检测无 LLM key 时跳过 LLM 调用，返回中性结果
+6. **types.ModuleType vs type(sys)**：动态 import 测试用 `types.ModuleType` 造 fake module（不是 `type(sys)`）
+
+##### v3.5 收尾 4 PR 估时对比
+
+| PR | 估时（v3.4.3.7 §11.4）| 实测 commit 数 | 实测 LOC（估）| 偏差 | 结论 |
+|---|---|---|---|---|---|
+| PR-11（持久化）| 未估 | 1 | 105 行（scheduler_state.py）| — | 新增能力，无基线 |
+| PR-12（LLM）| 未估 | 1 | 249 行（llm_client.py）| — | 新增能力 |
+| PR-13（vendor）| 未估 | 1 | 221 行（data_vendor.py）| — | 新增能力 |
+| PR-14（基座）| 未估 | 1 | 85 行（base_adapter.py）+ 113 行（production_adapter.py）| — | 新增能力 |
+
+> 📌 **v3.4.3.9 偏差说明**：v3.4.3.7 §11.4 只估了 PR-6a/6b/7/8/9/10 共 6 个 PR（v3.5 P0），PR-11/12/13/14 是 v3.5 收尾阶段新增任务，**未在 v3.4.3.7 估时范围内**——本次实测值为后续估时方法学补完。
+
+##### v3.5 + v3.6 完整 PR 清单（10 PR + 2 review 修复）
+
+| 阶段 | PR | commit | 模块 | 测试 |
+|---|---|---|---|---|
+| **v3.5 P0** | PR-6a | [442b777](442b777) | decision_log append + load | 15/15 ✅ |
+| v3.5 P0 | PR-6b | [2cf0512](2cf0512) | decision_log settle + reflect | 22/22 ✅ |
+| v3.5 P0 | PR-7 | [9a2a645](9a2a645) | 4 analyst + research_manager | 38/38 ✅ |
+| v3.5 P0 | PR-8 | [7e69583](7e69583) | 3 risk debator + 投票 | 47/47 ✅ |
+| v3.5 P0 | PR-9 | [20acc04](20acc04) | production_adapter + 端到端 CLI | 54/54 ✅ |
+| v3.5 P0 | PR-10 | [4eb0f2e](4eb0f2e) | scheduler + CLI | 62/62 ✅ |
+| **v3.5 收尾** | PR-11 | [d6242e9](d6242e9) | scheduler_state 持久化 | 70/70 ✅ |
+| v3.5 收尾 | PR-12 | [5b5c907](5b5c907) | llm_client 多 provider | 84/84 ✅ |
+| v3.5 收尾 | PR-13 | [9e10ecf](9e10ecf) | data_vendor ccxt + yfinance | 96/96 ✅ |
+| v3.5 收尾 | PR-14 | [00ad1f1](00ad1f1) | base_adapter 动态 import | 104/104 ✅ |
+| **v3.6 review** | 修 1 | [172f7ef](172f7ef) | code-reviewer 第 6 轮 I3+I4 | 104/104 ✅ |
+| v3.6 review | 修 2 | [674bf8a](674bf8a) | code-reviewer 第 7 轮 1C+1I+1M | **113/113** ✅ |
+| **总计** | 12 commits | — | — | **113/113** |
+
+##### 7 轮 subagent 复审全景
+
+| 轮 | agent | 触发的版本 | 关键产出 |
+|---|---|---|---|
+| 1 | [75a95e3e](75a95e3e-f3ea-4b90-8fdb-ccc9aa67bd45) | v3.4.3.1 | 修 2/4/2 |
+| 2 | [d134e77a](d134e77a-91d6-448d-b750-fd1d7749eba2) | v3.4.3.3 | 揭示 fork 误判 |
+| 3 | [5d7de110](5d7de110-d415-478f-9d34-33d2b3f9ece9) | v3.4.3.4 | 验真撤销完整修 1/3/3 |
+| 4 | [kline-pm](aab3a87a-9034-46ce-a38a-1c5484160123) | v3.4.3.6 | 拍冲突 1 + 触发 v3.4.3.6 |
+| 5 | [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) | v3.4.3.7 | 独立验真字节数 + 触发 v3.4.3.7 |
+| 6 | code-reviewer ([eee7f999-535d-4981-98a6-7682427c50ac](eee7f999-535d-4981-98a6-7682427c50ac)) | 172f7ef | 10 PR 复审 + 1 误报 + 2 修（I3+I4）|
+| 7 | （同 6 续）| 674bf8a | 1 CRITICAL + 1 IMPORTANT + 1 MINOR |
+
+##### v3.4.3.9 状态
+
+- 0 CRITICAL / 0 IMPORTANT / 0 MINOR 残留
+- 10/10 PR 全部 LGTM
+- 113/113 测试全绿
+- push 成功：`5b5a09d..674bf8a` main（7 commits：5b5a09d 文档 + PR-11/12/13/14 + 172f7ef + 674bf8a）
+- **LGTM**——v3.5 + v3.6 阶段收尾
+
+##### v3.7 候选（下次开工）
+
+- Linux systemd 部署（vibe-trading-cn.service + 健康检查 + .env）
+- 接基座 `vibe-trading-ai` PyPI 包（生产环境 `pip install vibe-trading-ai` 后无缝接入）
+- 多进程 scheduler（v3.7 考虑）
+- 接 ccxt / yfinance 生产环境（`pip install ccxt yfinance`，脱离 fixture）
+- 端到端 e2e 测试（模拟真实信号 → 决策 → 结算 → 回报）
+
 ---
 
-**文档结束（v3.4.3.8）**。字数 ~10800（§11 累计 +4100 字），含 3 张表 + 6 个冲突 + **v3.5 6 PR 完工报告** + **8 轮迭代日志**（v3.4.3 → v3.4.3.1 → v3.4.3.2 → v3.4.3.3 → v3.4.3.4 → v3.4.3.5 → v3.4.3.6 → v3.4.3.7 → **v3.4.3.8**）。**通过 5 轮 subagent 复审**（[75a95e3e](75a95e3e-f3ea-4b90-8fdb-ccc9aa67bd45) 修 2/4/2 → [d134e77a](d134e77a-91d6-448d-b750-fd1d7749eba2) 揭示 fork 误判 → [5d7de110](5d7de110-d415-478f-9d34-33d2b3f9ece9) 验真撤销完整修 1/3/3 → [kline-pm](aab3a87a-9034-46ce-a38a-1c5484160123) 拍冲突 1 + 触发 v3.4.3.6 → [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 第 5 轮独立验真字节数 + 触发 v3.4.3.7）。**v3.5 P0 全部完工**——`bobing888/vibe-trading-cn` main 分支 `4eb0f2e`，6 commits，3,269 行代码 + 525 行测试 = 3,794 行。
+**文档结束（v3.4.3.9）**。字数 ~11500（§11 累计 +4900 字），含 4 张表 + 6 个冲突 + **v3.5 10 PR + v3.6 review 完工报告** + **9 轮迭代日志**（v3.4.3 → v3.4.3.1 → v3.4.3.2 → v3.4.3.3 → v3.4.3.4 → v3.4.3.5 → v3.4.3.6 → v3.4.3.7 → v3.4.3.8 → **v3.4.3.9**）。**通过 7 轮 subagent 复审**（[75a95e3e](75a95e3e-f3ea-4b90-8fdb-ccc9aa67bd45) 修 2/4/2 → [d134e77a](d134e77a-91d6-448d-b750-fd1d7749eba2) 揭示 fork 误判 → [5d7de110](5d7de110-d415-478f-9d34-33d2b3f9ece9) 验真撤销完整修 1/3/3 → [kline-pm](aab3a87a-9034-46ce-a38a-1c5484160123) 拍冲突 1 + 触发 v3.4.3.6 → [code-reviewer](41b73de1-f7e7-4190-ab3b-1581f272554e) 第 5 轮独立验真字节数 + 触发 v3.4.3.7 → code-reviewer ([eee7f999-535d-4981-98a6-7682427c50ac](eee7f999-535d-4981-98a6-7682427c50ac)) 第 6 轮 10 PR 复审触发 172f7ef + 第 7 轮触发 674bf8a）。**v3.5 + v3.6 全部完工**——`bobing888/vibe-trading-cn` main 分支 `674bf8a`，10 PR + 2 review commits，~2,300 行 src + ~2,100 行 tests = ~4,400 行。
