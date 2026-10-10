@@ -11,7 +11,8 @@ v3 简化：
 - 不支持 stream
 - 不支持 function calling
 - 不支持多模态
-- 单次重试（生产需加 retry/circuit breaker）
+- 内置 retry：3 次（生产必须 — 第 6 轮 review CRITICAL 修复）
+- 4xx 不重试（参数/凭据错，重试无意义）；5xx/timeout/connection 触发重试
 - OpenAI-compatible API（Kimi / DeepSeek 都用 OpenAI 格式）
 """
 
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -26,6 +28,14 @@ import requests
 
 
 logger = logging.getLogger(__name__)
+
+
+# Retry 配置（生产第 6 轮 review CRITICAL 修复）
+RETRY_MAX_ATTEMPTS = 3
+RETRY_BACKOFF_BASE_SEC = 1.0
+RETRY_BACKOFF_FACTOR = 2.0  # 1s, 2s, 4s
+# 哪些 HTTP 状态码触发 retry
+RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 
 SUPPORTED_PROVIDERS = ("openai", "kimi", "deepseek")
@@ -124,7 +134,14 @@ class BaseLLMClient(ABC):
 
 
 class OpenAIClient(BaseLLMClient):
-    """OpenAI provider（含 Kimi / DeepSeek — OpenAI-compatible API）"""
+    """OpenAI provider（含 Kimi / DeepSeek — OpenAI-compatible API）
+
+    重试策略（第 6 轮 review CRITICAL）：
+    - 重试 3 次，指数退避 1s/2s/4s
+    - 重试触发条件：网络异常（timeout/connection/SSLError）或 5xx/429 响应
+    - 4xx（除 429）不重试（凭据/参数错，重试无意义）
+    - 全重试耗尽后由 BaseLLMClient.__call__ 兜底返回空 content
+    """
 
     def _call(self, messages: list[tuple[str, str]]) -> _StubResult:
         url = f"{self.config.base_url.rstrip('/')}/chat/completions"
@@ -143,11 +160,59 @@ class OpenAIClient(BaseLLMClient):
             "temperature": 0.3,
             "max_tokens": 1024,
         }
-        resp = requests.post(url, json=body, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        return _StubResult(content=content)
+
+        # retry loop
+        last_err: Exception | None = None
+        for attempt in range(1, RETRY_MAX_ATTEMPTS + 1):
+            try:
+                resp = requests.post(url, json=body, headers=headers, timeout=30)
+                if resp.status_code in RETRYABLE_STATUS_CODES:
+                    raise RuntimeError(
+                        f"HTTP {resp.status_code} from {self.config.provider} (attempt {attempt}/{RETRY_MAX_ATTEMPTS})"
+                    )
+                resp.raise_for_status()
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+                return _StubResult(content=content)
+            except requests.exceptions.Timeout as e:
+                last_err = e
+                logger.warning(
+                    f"[{self.config.provider}] timeout (attempt {attempt}/{RETRY_MAX_ATTEMPTS})"
+                )
+            except requests.exceptions.ConnectionError as e:
+                last_err = e
+                logger.warning(
+                    f"[{self.config.provider}] connection error (attempt {attempt}/{RETRY_MAX_ATTEMPTS}): {e}"
+                )
+            except requests.exceptions.HTTPError as e:
+                # 4xx（非 retryable）直接抛出 → BaseLLMClient.__call__ 兜底
+                if resp is not None and resp.status_code not in RETRYABLE_STATUS_CODES:
+                    logger.error(
+                        f"[{self.config.provider}] non-retryable HTTP {resp.status_code}: {e}"
+                    )
+                    raise
+                last_err = e
+                logger.warning(
+                    f"[{self.config.provider}] HTTP error (attempt {attempt}/{RETRY_MAX_ATTEMPTS}): {e}"
+                )
+            except Exception as e:
+                # 其它异常（RuntimeError 含 5xx）也走重试
+                last_err = e
+                logger.warning(
+                    f"[{self.config.provider}] call failed (attempt {attempt}/{RETRY_MAX_ATTEMPTS}): {e}"
+                )
+
+            if attempt < RETRY_MAX_ATTEMPTS:
+                backoff = RETRY_BACKOFF_BASE_SEC * (RETRY_BACKOFF_FACTOR ** (attempt - 1))
+                time.sleep(backoff)
+
+        # 重试全部失败
+        logger.error(
+            f"[{self.config.provider}] all {RETRY_MAX_ATTEMPTS} attempts failed: {last_err}"
+        )
+        raise RuntimeError(
+            f"LLM call failed after {RETRY_MAX_ATTEMPTS} attempts: {last_err}"
+        )
 
 
 class KimiClient(OpenAIClient):

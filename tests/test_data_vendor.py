@@ -143,6 +143,30 @@ class TestDataVendorFactory:
         v = get_vendor("600519.SS")
         assert v.name == "yfinance"
 
+    def test_factory_a_share_6digit_returns_yfinance(self) -> None:
+        """A 股代码（6 位纯数字）→ YFinanceVendor（第 6 轮 review IMPORTANT 修复）"""
+        from src.vibe_trading_cn.data_vendor import get_vendor
+        v = get_vendor("600519")
+        assert v.name == "yfinance"
+
+    def test_factory_a_share_sz_returns_yfinance(self) -> None:
+        """A 股深证代码 → YFinanceVendor"""
+        from src.vibe_trading_cn.data_vendor import get_vendor
+        v = get_vendor("000001.SZ")
+        assert v.name == "yfinance"
+
+    def test_factory_crypto_with_slash_returns_ccxt(self) -> None:
+        """加密 ticker 已带 / → CCXTVendor（第 6 轮 review MINOR 修复）"""
+        from src.vibe_trading_cn.data_vendor import get_vendor
+        v = get_vendor("BTC/USDT")
+        assert "ccxt" in v.name
+
+    def test_factory_lowercase_usdt_returns_ccxt(self) -> None:
+        """小写 usdt 后缀也走 CCXT"""
+        from src.vibe_trading_cn.data_vendor import get_vendor
+        v = get_vendor("btcusdt")
+        assert "ccxt" in v.name
+
 
 # ====================================================================
 # 端到端：production_adapter.fetch_market_data

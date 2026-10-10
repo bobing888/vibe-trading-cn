@@ -4,6 +4,12 @@
 - 少量已知 ticker 预填真实样本（BTC / ETH / AAPL / 600519）
 - 未知 ticker 降级为通用空 schema（让 4 analyst 走"无数据" 路径）
 - 数据不连真实 API（PR-9 简化 — v3.6+ 接基座）
+
+已知 ticker 说明（第 6 轮 review IMPORTANT 修复）：
+- BTCUSDT：BTC/USDT 加密币（参考市值 ~1.3T USD）
+- ETHUSDT：ETH/USDT 加密币（参考市值 ~400B USD）
+- AAPL：苹果公司（美股，参考 PE 28.5）
+- 600519：贵州茅台（A 股，参考 PE 25.8 — 需 yfinance 加 .SS 后缀）
 """
 
 from __future__ import annotations

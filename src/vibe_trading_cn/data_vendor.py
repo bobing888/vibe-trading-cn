@@ -193,12 +193,23 @@ class YFinanceVendor(BaseDataVendor):
 def get_vendor(ticker: str) -> BaseDataVendor:
     """Factory: 按 ticker 类型选 vendor
 
-    规则：
-    - 含 USDT 后缀 → CCXTVendor
-    - 其它 → YFinanceVendor
+    路由规则（第 6 轮 review IMPORTANT 修复）：
+    - 含 "/" → 已带 ccxt 格式（CCXTVendor）
+    - 6 位纯数字 → A 股（YFinanceVendor，调用方需加 .SS / .SZ）
+    - 6 位数字 + .SS / .SZ → A 股（YFinanceVendor）
+    - 含 "USDT" 后缀（不区分大小写）→ CCXTVendor
+    - 其它美股 / ETF → YFinanceVendor
+
+    优先级：精确匹配 > 正则 > 后缀 > 默认
     """
-    if "USDT" in ticker.upper():
+    upper = ticker.upper()
+    # A 股：6 位数字（含 .SS / .SZ 后缀）
+    if re.match(r"^\d{6}(\.SS|\.SZ)?$", upper):
+        return YFinanceVendor()
+    # 加密：USDT 后缀或已带 /
+    if "USDT" in upper or "/" in ticker:
         return CCXTVendor()
+    # 默认美股 / ETF
     return YFinanceVendor()
 
 

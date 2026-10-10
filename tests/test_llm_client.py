@@ -211,6 +211,157 @@ class TestLLMClientFactory:
 
 
 # ====================================================================
+# Retry 行为测试（第 6 轮 review CRITICAL 修复）
+# ====================================================================
+
+class TestLLMClientRetry:
+    """LLM 调用 retry 行为
+
+    - 5xx / 429 / timeout / connection error → 重试 3 次
+    - 4xx（除 429）→ 不重试，立即抛
+    - 全重试失败 → BaseLLMClient.__call__ 兜底返回空 content
+    """
+
+    def _build_client(self):
+        from src.vibe_trading_cn.llm_client import OpenAIClient, ProviderConfig
+        return OpenAIClient(ProviderConfig(
+            provider="openai", api_key="sk-x", base_url="https://api.openai.com/v1",
+            model="gpt-4o-mini",
+        ))
+
+    def test_retry_on_5xx_then_success(self, monkeypatch) -> None:
+        """第一次 503，第二次 200 → 成功返回第 2 次内容"""
+        call_count = {"n": 0}
+        from src.vibe_trading_cn import llm_client
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            call_count["n"] += 1
+            from requests.exceptions import HTTPError
+            class R:
+                def __init__(self, code, body=None):
+                    self.status_code = code
+                    self._body = body or {}
+                def json(self_inner):
+                    return self_inner._body
+                def raise_for_status(self_inner):
+                    if self_inner.status_code >= 400:
+                        raise HTTPError(f"{self_inner.status_code}")
+            if call_count["n"] == 1:
+                return R(503)
+            return R(200, {"choices": [{"message": {"content": "RETRY_OK"}}]})
+
+        # 跳过 sleep（避免 CI 慢）
+        monkeypatch.setattr(llm_client.time, "sleep", lambda s: None)
+        monkeypatch.setattr("src.vibe_trading_cn.llm_client.requests.post", fake_post)
+
+        c = self._build_client()
+        r = c([("system", "x"), ("human", "y")])
+        assert r.content == "RETRY_OK"
+        assert call_count["n"] == 2
+
+    def test_retry_on_timeout_then_success(self, monkeypatch) -> None:
+        """第一次 timeout，第二次成功"""
+        call_count = {"n": 0}
+        from src.vibe_trading_cn import llm_client
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                import requests
+                raise requests.exceptions.Timeout("read timeout")
+            class R:
+                status_code = 200
+                def json(self_inner):
+                    return {"choices": [{"message": {"content": "TIMEOUT_RECOVERED"}}]}
+                def raise_for_status(self_inner): pass
+            return R()
+
+        monkeypatch.setattr(llm_client.time, "sleep", lambda s: None)
+        monkeypatch.setattr("src.vibe_trading_cn.llm_client.requests.post", fake_post)
+
+        c = self._build_client()
+        r = c([("system", "x")])
+        assert r.content == "TIMEOUT_RECOVERED"
+        assert call_count["n"] == 2
+
+    def test_no_retry_on_4xx(self, monkeypatch) -> None:
+        """401 立即抛（凭据错，重试无意义）"""
+        call_count = {"n": 0}
+        from src.vibe_trading_cn import llm_client
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            call_count["n"] += 1
+            from requests.exceptions import HTTPError
+            class R:
+                status_code = 401
+                def json(self_inner): return {}
+                def raise_for_status(self_inner):
+                    raise HTTPError("401")
+            return R()
+
+        monkeypatch.setattr(llm_client.time, "sleep", lambda s: None)
+        monkeypatch.setattr("src.vibe_trading_cn.llm_client.requests.post", fake_post)
+
+        c = self._build_client()
+        r = c([("system", "x")])
+        # __call__ 兜底 → 空 content
+        assert r.content == ""
+        assert call_count["n"] == 1  # 不重试
+
+    def test_retry_exhausted_returns_empty(self, monkeypatch) -> None:
+        """3 次都 503 → 抛 → __call__ 兜底返回空 content"""
+        call_count = {"n": 0}
+        from src.vibe_trading_cn import llm_client
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            call_count["n"] += 1
+            from requests.exceptions import HTTPError
+            class R:
+                status_code = 503
+                def json(self_inner): return {}
+                def raise_for_status(self_inner):
+                    raise HTTPError("503")
+            return R()
+
+        monkeypatch.setattr(llm_client.time, "sleep", lambda s: None)
+        monkeypatch.setattr("src.vibe_trading_cn.llm_client.requests.post", fake_post)
+
+        c = self._build_client()
+        r = c([("system", "x")])
+        assert r.content == ""
+        assert call_count["n"] == 3  # 重试 3 次
+
+    def test_retry_429_ratelimit(self, monkeypatch) -> None:
+        """429 触发重试（特殊 4xx）"""
+        call_count = {"n": 0}
+        from src.vibe_trading_cn import llm_client
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            call_count["n"] += 1
+            from requests.exceptions import HTTPError
+            class R:
+                def __init__(self, code, body=None):
+                    self.status_code = code
+                    self._body = body or {}
+                def json(self_inner):
+                    return self_inner._body
+                def raise_for_status(self_inner):
+                    if self_inner.status_code >= 400:
+                        raise HTTPError(f"{self_inner.status_code}")
+            if call_count["n"] < 3:
+                return R(429)
+            return R(200, {"choices": [{"message": {"content": "RATELIMIT_RECOVERED"}}]})
+
+        monkeypatch.setattr(llm_client.time, "sleep", lambda s: None)
+        monkeypatch.setattr("src.vibe_trading_cn.llm_client.requests.post", fake_post)
+
+        c = self._build_client()
+        r = c([("system", "x")])
+        assert r.content == "RATELIMIT_RECOVERED"
+        assert call_count["n"] == 3
+
+
+# ====================================================================
 # 端到端：接 production_adapter
 # ====================================================================
 
