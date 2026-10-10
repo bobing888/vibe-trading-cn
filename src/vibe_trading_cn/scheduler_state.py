@@ -77,9 +77,18 @@ class SchedulerState:
             logger.warning(f"[state] corrupted state file {path}: {e}; using default")
             return cls()
 
-    def record_run(self, results: dict[str, int], next_run_ts: float) -> None:
-        """记录一次 run 结果"""
-        self.last_run = next_run_ts - 3600  # 调用方传 next_run，回推 last_run
+    def record_run(
+        self, results: dict[str, int], next_run_ts: float,
+        interval_seconds: float = 3600,
+    ) -> None:
+        """记录一次 run 结果
+
+        Args:
+            results: {task_name: return_code}
+            next_run_ts: 下次执行时间戳（now + interval）
+            interval_seconds: 用于回算 last_run（避免硬编码 3600）
+        """
+        self.last_run = next_run_ts - interval_seconds
         self.next_run = next_run_ts
         self.run_count += 1
         for name, code in results.items():

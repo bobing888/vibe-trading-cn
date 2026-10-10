@@ -45,14 +45,16 @@ def _try_base_first(ticker: str, trade_date: str) -> Optional[dict[str, Any]]:
 def _try_vendor_first(ticker: str, trade_date: str) -> Optional[dict[str, Any]]:
     """v3.5 PR-13：尝试真实 vendor，失败返回 None（让 caller 降级 fixture）
 
-    threading.Lock：4 analyst 并行（asyncio.to_thread 跑线程）时串行化 vendor init
-    避免 ccxt / yfinance import 死锁
+    threading.Lock 只护 import + __init__（避免 ccxt 死锁），
+    HTTP 请求在锁外并行（4 analyst 并发不被串行化）
     """
     try:
+        # 仅锁 init
         with _vendor_init_lock:
             from .data_vendor import get_vendor
             v = get_vendor(ticker)
-            data = v(ticker, trade_date)
+        # HTTP 请求在锁外（4 analyst 并行）
+        data = v(ticker, trade_date)
         # 校验 schema 完整性
         if not data.get("ohlcv"):
             logger.warning(f"[adapter] vendor {v.name} returned empty ohlcv for {ticker}")
