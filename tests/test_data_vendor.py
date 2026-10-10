@@ -206,3 +206,93 @@ class TestProductionAdapterIntegration:
         # 降级到 fixture（BTCUSDT 有真实样本）
         assert "ohlcv" in result
         assert "2026-10-01" in result["ohlcv"]
+
+
+# ====================================================================
+# v3.7 真实 vendor 可用性（ccxt + yfinance 装好后）
+# ====================================================================
+
+class TestRealVendorAvailability:
+    """v3.7 真实 vendor 可用性：pip install ccxt yfinance 后
+
+    这些测试验证装好后 vendor 能真构造 + 路由 + 调用 ccxt/yfinance 库。
+    实际 HTTP 调用可能因网络限流失败，所以用 monkeypatch mock 掉 fetch
+    验证集成链路通，HTTP 失败降级也通。
+    """
+
+    def test_ccxt_library_importable(self) -> None:
+        """ccxt 库可 import（pip install ccxt>=4.0）"""
+        try:
+            import ccxt
+        except ImportError as e:
+            pytest.skip(f"ccxt not installed: {e}")
+        assert hasattr(ccxt, "binance")
+        assert hasattr(ccxt, "okx")
+        assert hasattr(ccxt, "bybit")
+
+    def test_yfinance_library_importable(self) -> None:
+        """yfinance 库可 import（pip install yfinance）"""
+        try:
+            import yfinance as yf
+        except ImportError as e:
+            pytest.skip(f"yfinance not installed: {e}")
+        assert hasattr(yf, "Ticker")
+
+    def test_ccxt_vendor_lazy_loads_exchange(self, monkeypatch) -> None:
+        """v3.7 CCXTVendor lazy load ccxt exchange（避免未装时 import 失败）"""
+        from src.vibe_trading_cn.data_vendor import CCXTVendor
+
+        # 替换 _get_exchange 模拟 lazy load
+        v = CCXTVendor(exchange="binance")
+        assert v._exchange is None  # 还没初始化
+
+        # 模拟 ccxt exchange
+        class FakeExchange:
+            name = "Binance"
+            def fetch_ohlcv(self, symbol, timeframe, since, limit):
+                return [[1727750400000, 63000, 64500, 62800, 64200, 28000]]
+
+        monkeypatch.setattr(v, "_get_exchange", lambda: FakeExchange())
+        data = v("BTCUSDT", "2024-10-01")
+        assert data["ticker"] == "BTCUSDT"
+        assert "2024-10-01" in data["ohlcv"]
+        assert data["ohlcv"]["2024-10-01"]["close"] == 64200
+
+    def test_yfinance_vendor_real_call_fails_gracefully(self, monkeypatch) -> None:
+        """v3.7 YFinanceVendor 真调用 yfinance（限流时降级到空 schema）"""
+        from src.vibe_trading_cn.data_vendor import YFinanceVendor
+
+        # 模拟 yfinance.Ticker 限流
+        class FakeTicker:
+            def history(self, **kwargs):
+                import yfinance as yf
+                raise RuntimeError("YFRateLimitError: Too Many Requests")
+
+        def fake_ticker(symbol):
+            return FakeTicker()
+
+        monkeypatch.setattr(
+            "yfinance.Ticker", fake_ticker
+        )
+        v = YFinanceVendor()
+        data = v("AAPL", "2026-10-01")
+        # 限流时降级到空 schema（fixture 兜底由 production_adapter 处理）
+        assert data["ticker"] == "AAPL"
+        assert data["ohlcv"] == {}  # 空
+        assert data["fundamentals"] == {}
+
+    def test_production_adapter_full_chain_with_real_vendors(self, monkeypatch) -> None:
+        """v3.7 production_adapter 完整链路：vendor 限流 → fixture 兜底"""
+        from src.vibe_trading_cn import production_adapter, data_vendor
+
+        # 模拟 vendor 限流
+        class RateLimitedVendor:
+            name = "rate-limited"
+            def __call__(self, ticker, trade_date):
+                raise RuntimeError("Rate limited")
+
+        monkeypatch.setattr(data_vendor, "get_vendor", lambda t: RateLimitedVendor())
+        result = production_adapter.fetch_market_data("BTCUSDT", "2026-10-07")
+        # 三级降级：基座失败 → vendor 失败 → fixture 兜底
+        assert "ohlcv" in result
+        assert "2026-10-01" in result["ohlcv"]
